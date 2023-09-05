@@ -28,7 +28,7 @@ interp_dict = {
     'patch_instructions': interp_x86,
 }
 
-if False:
+if True:
     run_one_test(os.getcwd() + '/tests/var/zero.py',
                  'var',
                  compiler,
