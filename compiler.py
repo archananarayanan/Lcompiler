@@ -178,8 +178,8 @@ class Compiler:
             case Call(Name('print'), [arg]):
                 res = []
             case BinOp(left, Add(), right):
-                l,inst_l = self.handle_assign(left)
-                r,inst_r = self.handle_assign(right)
+                l,inst_l = self.handle_assign(left,None)
+                r,inst_r = self.handle_assign(right,None)
                 for x in inst_l:
                      res.append(x)
                 for y in inst_r:
@@ -193,8 +193,8 @@ class Compiler:
                     res.append(Instr('addq', [r, id]))
                 return id,res
             case BinOp(left, Sub(), right):
-                    l,inst_l = self.handle_assign(left)
-                    r,inst_r = self.handle_assign(right)
+                    l,inst_l = self.handle_assign(left,None)
+                    r,inst_r = self.handle_assign(right,None)
                     for x in inst_l:
                      res.append(x)
                     for y in inst_r:
@@ -208,7 +208,7 @@ class Compiler:
                         res.append(Instr('subq', [r, id]))
                     return id,res
             case UnaryOp(USub(), v):
-                    val,inst = self.handle_assign(v)
+                    val,inst = self.handle_assign(v,None)
                     for x in inst:
                      res.append(x)
                     neg_stmt = Instr('negq', [val])
@@ -225,7 +225,7 @@ class Compiler:
                    arg = self.select_arg(s)
                    inst_stmt = Instr('movq', [arg, id])
                    res.append(inst_stmt)
-                   return id,res
+                   return arg,res
 
     def handle_print(self, s: expr):
          res = [] 
