@@ -178,8 +178,12 @@ class Compiler:
             case Call(Name('print'), [arg]):
                 res = []
             case BinOp(left, Add(), right):
-                l = self.select_arg(left)
-                r = self.select_arg(right)
+                l,inst_l = self.handle_assign(left)
+                r,inst_r = self.handle_assign(right)
+                for x in inst_l:
+                     res.append(x)
+                for y in inst_r:
+                     res.append(y)
                 if Variable(id) == l:
                     res.append(Instr('addq', [l, r]))
                 elif  Variable(id) == r:
@@ -187,9 +191,14 @@ class Compiler:
                 else:
                     res.append(Instr('movq', [l, Variable(id)]))
                     res.append(Instr('addq', [r, Variable(id)]))
+                return "",res
             case BinOp(left, Sub(), right):
-                    l = self.select_arg(left)
-                    r = self.select_arg(right)
+                    l = self.handle_assign(left)
+                    r = self.handle_assign(right)
+                    for x in inst_l:
+                     res.append(x)
+                    for y in inst_r:
+                     res.append(y)
                     if Variable(id) == l:
                         res.append(Instr('subq', [l, r]))
                     elif  Variable(id) == r:
@@ -197,23 +206,26 @@ class Compiler:
                     else:
                         res.append(Instr('movq', [l, Variable(id)]))
                         res.append(Instr('subq', [r, Variable(id)]))
+                    return "",res
             case UnaryOp(USub(), v):
-                    val = self.select_arg(v)
+                    val,inst = self.handle_assign(v)
+                    for x in inst:
+                      res.append(x)
                     neg_stmt = Instr('negq', [Variable(id)])
                     res.append(Instr('movq', [val, Variable(id)]))
                     res.append(neg_stmt)
+                    return val,res
             case Call(Name('input_int'), []):
                     inst_stmt = Instr('movq', [Reg("rax"), Variable(id)])
                     call_stmt = Callq("read_int",0)
                     res.append(call_stmt)
                     res.append(inst_stmt)
+                    return Reg("rax"),res
             case _:
                    arg = self.select_arg(s)
                    inst_stmt = Instr('movq', [arg, Variable(id)])
                    res.append(inst_stmt)
-
-            
-         return res
+                   return arg, res
 
     def handle_print(self, s: expr):
          res = [] 
