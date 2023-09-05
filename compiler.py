@@ -164,7 +164,7 @@ class Compiler:
                 call_stmt = Callq("read_int",0)
                 res.append(call_stmt)
             case Assign([Name(id)], value):
-                assign_stmt = self.handle_assign(Expr(value), id)
+                assign_stmt = self.handle_assign(value, id)
                 for x in assign_stmt:
                     res.append(x)
             case _:
@@ -175,9 +175,9 @@ class Compiler:
     def handle_assign(self, s: stmt, id: any):
          res = [] 
          match s:
-            case Expr(Call(Name('print'), [arg])):
+            case Call(Name('print'), [arg]):
                 res = []
-            case Expr(BinOp(left, Add(), right)):
+            case BinOp(left, Add(), right):
                 l = self.select_arg(left)
                 r = self.select_arg(right)
                 if Variable(id) == l:
@@ -187,7 +187,7 @@ class Compiler:
                 else:
                     res.append(Instr('movq', [l, Variable(id)]))
                     res.append(Instr('addq', [r, Variable(id)]))
-            case Expr(BinOp(left, Sub(), right)):
+            case BinOp(left, Sub(), right):
                     l = self.select_arg(left)
                     r = self.select_arg(right)
                     if Variable(id) == l:
@@ -197,39 +197,54 @@ class Compiler:
                     else:
                         res.append(Instr('movq', [l, Variable(id)]))
                         res.append(Instr('subq', [r, Variable(id)]))
-            case Expr(UnaryOp(USub(), v)):
+            case UnaryOp(USub(), v):
                     val = self.select_arg(v)
-                    neg_stmt = Instr('negq', [val])
+                    neg_stmt = Instr('negq', [Variable(id)])
                     res.append(Instr('movq', [val, Variable(id)]))
-            case Call(Name('input_int'), [var]):
+                    res.append(neg_stmt)
+            case Call(Name('input_int'), []):
                     inst_stmt = Instr('movq', [Reg("rax"), Variable(id)])
                     call_stmt = Callq("read_int",0)
                     res.append(call_stmt)
                     res.append(inst_stmt)
             case _:
-                raise Exception('error in select_stmt, unexpected ' + repr(s))  
+                   arg = self.select_arg(s)
+                   inst_stmt = Instr('movq', [arg, Variable(id)])
+                   res.append(inst_stmt)
+
             
          return res
 
     def handle_print(self, s: expr):
          res = [] 
          match s:
-            case Call(Name('print'), [arg]):
+            case Call(Name('print'), []):
                 res = []
             case BinOp(left, Add(), right):
-                l = self.select_arg(left)
-                r = self.select_arg(right)
+                inst_l,l = self.handle_print(left)
+                inst_r,r = self.handle_print(right)
+                print("left:",l," right:", r," l_inst:", inst_l," r_inst:", inst_r)
+                for x in inst_l:
+                     res.append(x)
+                for x in inst_r:
+                     res.append(x)
                 res.append(Instr('movq', [l, Reg("rax")]))
                 res.append(Instr('addq', [r, Reg("rax")]))
                 return res,Reg("rax")
             case BinOp(left, Sub(), right):
-                l = self.select_arg(left)
-                r = self.select_arg(right)
+                inst_l,l = self.handle_print(left)
+                inst_l,r = self.handle_print(right)
+                for x in inst_l:
+                     res.append(x)
+                for x in inst_r:
+                     res.append(x)
                 res.append(Instr('movq', [l, Reg("rax")]))
                 res.append(Instr('addq', [r, Reg("rax")]))
                 return res,Reg("rax")
             case UnaryOp(USub(), v):
-                val = self.select_arg(v)
+                inst,val = self.handle_print(v)
+                for x in inst:
+                     res.append(x)
                 res.append(Instr('movq', [val, Reg("rax")]))
                 res.append(Instr('negq', Reg("rax")))
                 return res,Reg("rax")
@@ -304,7 +319,7 @@ class Compiler:
                     return inst_stmt
             case Instr('negq', [arg1]):
                     arg1_stmt = self.assign_homes_arg(arg1, home)
-                    inst_stmt = Instr('negq', [arg1_stmt, arg2_stmt])
+                    inst_stmt = Instr('negq', [arg1_stmt])
                     return inst_stmt
             case Callq("read_int",0):
                     return i
