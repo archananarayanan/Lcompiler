@@ -178,8 +178,8 @@ class Compiler:
             case Call(Name('print'), [arg]):
                 res = []
             case BinOp(left, Add(), right):
-                l,inst_l = self.select_arg(left)
-                r,inst_r = self.select_arg(right)
+                l,inst_l = self.handle_assign(left)
+                r,inst_r = self.handle_assign(right)
                 for x in inst_l:
                      res.append(x)
                 for y in inst_r:
@@ -193,8 +193,8 @@ class Compiler:
                     res.append(Instr('addq', [r, id]))
                 return id,res
             case BinOp(left, Sub(), right):
-                    l,inst_l = self.select_arg(left)
-                    r,inst_r = self.select_arg(right)
+                    l,inst_l = self.handle_assign(left)
+                    r,inst_r = self.handle_assign(right)
                     for x in inst_l:
                      res.append(x)
                     for y in inst_r:
@@ -208,7 +208,7 @@ class Compiler:
                         res.append(Instr('subq', [r, id]))
                     return id,res
             case UnaryOp(USub(), v):
-                    val,inst = self.select_arg(v)
+                    val,inst = self.handle_assign(v)
                     for x in inst:
                      res.append(x)
                     neg_stmt = Instr('negq', [val])
