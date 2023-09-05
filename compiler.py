@@ -174,56 +174,60 @@ class Compiler:
     
     def handle_assign(self, s: stmt, id: any):
          res = [] 
+         if id == None:
+             assign = Reg("rbx")
+         else:
+             assign = Variable(id)
          match s:
             case Call(Name('print'), [arg]):
                 res = []
             case BinOp(left, Add(), right):
-                l,inst_l = self.handle_assign(left)
-                r,inst_r = self.handle_assign(right)
+                l,inst_l = self.handle_assign(left,None)
+                r,inst_r = self.handle_assign(right,None)
                 for x in inst_l:
                      res.append(x)
                 for y in inst_r:
                      res.append(y)
-                if Variable(id) == l:
+                if assign == l:
                     res.append(Instr('addq', [l, r]))
-                elif  Variable(id) == r:
+                elif assign == r:
                     res.append(Instr('addq', [r, l]))
                 else:
-                    res.append(Instr('movq', [l, Variable(id)]))
-                    res.append(Instr('addq', [r, Variable(id)]))
+                    res.append(Instr('movq', [l, assign]))
+                    res.append(Instr('addq', [r, assign]))
                 return "",res
             case BinOp(left, Sub(), right):
-                    l = self.handle_assign(left)
+                    l = self.handle_assign(left,id)
                     r = self.handle_assign(right)
                     for x in inst_l:
                      res.append(x)
                     for y in inst_r:
                      res.append(y)
-                    if Variable(id) == l:
+                    if assign == l:
                         res.append(Instr('subq', [l, r]))
-                    elif  Variable(id) == r:
+                    elif  assign == r:
                         res.append(Instr('subq', [r, l]))
                     else:
-                        res.append(Instr('movq', [l, Variable(id)]))
-                        res.append(Instr('subq', [r, Variable(id)]))
+                        res.append(Instr('movq', [l, assign]))
+                        res.append(Instr('subq', [r, assign]))
                     return "",res
             case UnaryOp(USub(), v):
                     val,inst = self.handle_assign(v)
                     for x in inst:
                       res.append(x)
-                    neg_stmt = Instr('negq', [Variable(id)])
-                    res.append(Instr('movq', [val, Variable(id)]))
+                    neg_stmt = Instr('negq', [assign])
+                    res.append(Instr('movq', [val,assign]))
                     res.append(neg_stmt)
                     return val,res
             case Call(Name('input_int'), []):
-                    inst_stmt = Instr('movq', [Reg("rax"), Variable(id)])
+                    inst_stmt = Instr('movq', [Reg("rax"), assign])
                     call_stmt = Callq("read_int",0)
                     res.append(call_stmt)
                     res.append(inst_stmt)
                     return Reg("rax"),res
             case _:
                    arg = self.select_arg(s)
-                   inst_stmt = Instr('movq', [arg, Variable(id)])
+                   inst_stmt = Instr('movq', [arg, assign])
                    res.append(inst_stmt)
                    return arg, res
 
