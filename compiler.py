@@ -165,7 +165,8 @@ class Compiler:
                 res.append(call_stmt)
             case Assign([Name(id)], value):
                 assign_stmt = self.handle_assign(value, Variable(id))
-                for x in assign_stmt:
+                print(assign_stmt,"--------------------Assign stmt----")
+                for x in assign_stmt[1]:
                     res.append(x)
             case _:
                 raise Exception('error in select_stmt, unexpected ' + repr(s))  
