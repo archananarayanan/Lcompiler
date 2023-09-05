@@ -215,7 +215,7 @@ class Compiler:
                     val,inst = self.handle_assign(v,id)
                     for x in inst:
                      res.append(x)
-                    neg_stmt = Instr('negq', [val])
+                    neg_stmt = Instr('negq', [id])
                     res.append(Instr('movq', [val, id]))
                     res.append(neg_stmt)
                     return id, res
@@ -229,7 +229,8 @@ class Compiler:
             case _:
                    arg = self.select_arg(s)
                    inst_stmt = Instr('movq', [arg, id])
-                   res.append(inst_stmt)
+                   if id != None:
+                    res.append(inst_stmt)
                    return arg,res
 
     def handle_print(self, s: expr):
