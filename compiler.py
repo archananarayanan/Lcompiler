@@ -165,7 +165,7 @@ class Compiler:
                 res.append(call_stmt)
             case Assign([Name(id)], value):
                 assign_stmt = self.handle_assign(value, Variable(id))
-                for x in assign_stmt:
+                for x in assign_stmt[1]:
                     res.append(x)
             case _:
                 raise Exception('error in select_stmt, unexpected ' + repr(s))  
@@ -182,14 +182,18 @@ class Compiler:
                 r,inst_r = self.handle_assign(right,None)
                 for x in inst_l:
                      res.append(x)
-                for y in inst_r:
-                     res.append(y)
                 if id == l:
+                    for y in inst_r:
+                      res.append(y)
                     res.append(Instr('addq', [l, r]))
                 elif  id == r:
+                    for y in inst_r:
+                      res.append(y)
                     res.append(Instr('addq', [r, l]))
                 else:
                     res.append(Instr('movq', [l, id]))
+                    for y in inst_r:
+                     res.append(y)
                     res.append(Instr('addq', [r, id]))
                 return id,res
             case BinOp(left, Sub(), right):
@@ -219,7 +223,8 @@ class Compiler:
                     inst_stmt = Instr('movq', [Reg("rax"),id])
                     call_stmt = Callq("read_int",0)
                     res.append(call_stmt)
-                    res.append(inst_stmt)
+                    if id != None:
+                         res.append(inst_stmt)
                     return Reg("rax"),res
             case _:
                    arg = self.select_arg(s)
