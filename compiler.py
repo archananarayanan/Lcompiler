@@ -97,7 +97,9 @@ class Compiler:
     def remove_complex_operands(self, p: Module) -> Module:
         match p:
             case Module(body):
-                res = self.interp_stmts(body, [])
+                pe_module = self.pe_P(p)
+                print("received pe code:",pe_module.body)
+                res = self.interp_stmts(pe_module.body, [])
                 return Module(res)
             case _:
                 raise Exception('error in remove_complex_operands, unexpected ' + repr(p))
@@ -481,22 +483,22 @@ class Compiler:
 
     def pe_neg(self, r: expr):
          match r:
-              case Constant(n):
-                   return Constant(neg64(n))
+              case Constant(r):
+                   return Constant(neg64(r))
               case _:
                    return UnaryOp(USub(), r)
             
     def pe_add(self, r1:expr, r2:expr):
          match(r1,r2):
-              case (Constant(n1), Constant(n2)):
-                   return Constant(add64(n1,n2))
+              case (Constant(r1), Constant(r2)):
+                   return Constant(add64(r1,r2))
               case _:
                    return BinOp(r1, Add(), r2)
     
     def pe_sub(self, r1:expr, r2:expr):
          match(r1,r2):
-              case (Constant(n1), Constant(n2)):
-                   return Constant(sub64(n1,n2))
+              case (Constant(r1), Constant(r2)):
+                   return Constant(sub64(r1,r2))
               case _:
                    return BinOp(r1, Sub(), r2)
               
