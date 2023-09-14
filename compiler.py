@@ -1,8 +1,10 @@
 import ast
 from ast import *
+from graph import UndirectedAdjList
 from utils import * 
 from x86_ast import *
 import os
+import copy
 from typing import List, Tuple, Set, Dict
 
 
@@ -347,14 +349,165 @@ class Compiler:
                     return i
             case _:
                 raise Exception('error in assign_homes_instr, unexpected ' + repr(i))
+     
+    def live_arg(self, a: arg) -> arg:
+         match a:
+            case Immediate(value):
+                return None
+            case Variable(id):
+                return Variable(id)
+            case Reg(id):
+                return Reg(id)
+            case _:
+                raise Exception('error in assign_homes_arg, unexpected ' + repr(a))       
+         
+
+    def W_function(self, i: instr) -> set:
+         res = set()
+         match(i):
+            case Instr('movq', [arg1, arg2]):
+                    w_var = self.live_arg(arg2)
+                    if w_var != None:
+                        res.add(w_var)
+            case Instr('addq', [arg1, arg2]):
+                    w_var = self.live_arg(arg2)
+                    if w_var != None:
+                        res.add(w_var)
+            case Instr('subq', [arg1, arg2]):
+                    w_var = self.live_arg(arg2)
+                    if w_var != None:
+                        res.add(w_var)
+            case Instr('negq', [arg1]):
+                   w_var = self.live_arg(arg1)
+                   if w_var != None:
+                        res.add(w_var)
+            case Callq("read_int",0):
+                   w_var = self.live_arg(Reg("rax"))
+                   if w_var != None:
+                        res.add(w_var)
+            case Callq("print_int", 0):
+                   return None
+            case _:
+                raise Exception('error in assign_homes_instr, unexpected ' + repr(i))
+         return res
+
+    def R_function(self, i: instr) -> set:
+         res= set()
+         match(i):
+            case Instr('movq', [arg1, arg2]):
+                    w_var = self.live_arg(arg1)
+                    if w_var != None:
+                        res.add(w_var)
+            case Instr('addq', [arg1, arg2]):
+                    w_var1 = self.live_arg(arg1)
+                    w_var2 = self.live_arg(arg2)
+                    if w_var1 != None:
+                        res.add(w_var1)
+                    if w_var2 != None:
+                        res.add(w_var2)
+            case Instr('subq', [arg1, arg2]):
+                    w_var1 = self.live_arg(arg1)
+                    w_var2 = self.live_arg(arg2)
+                    if w_var1 != None:
+                        res.add(w_var1)
+                    if w_var2 != None:
+                        res.add(w_var2)
+            case Instr('negq', [arg1]):
+                   w_var = self.live_arg(arg1)
+                   if w_var != None:
+                        res.add(w_var)
+            case Callq("read_int",0):
+                   return None
+            case Callq("print_int", 0):
+                   w_var = self.live_arg(Reg("rdi"))
+                   if w_var != None:
+                        res.add(w_var)
+            case _:
+                raise Exception('error in assign_homes_instr, unexpected ' + repr(i))
+         return res
+
+
+    def uncover_live(self, ss: List[instr]) -> dict:
+         live_dict = {}
+         live_var = set()
+         for x in range(len(ss)-1,-1,-1):
+            i = ss[x]
+            r_vars = self.R_function(i)
+            w_vars = self.W_function(i)
+            # print("for instr-", i, " read are-", r_vars, " | write are- ",w_vars)
+            # print("live variables before - ", live_var)
+            if w_vars != None:
+                for d in w_vars:
+                    live_var.discard(d)
+            if r_vars != None:
+                live_var.update(r_vars)
+            # print("live variables after - ", live_var)
+            if x != 0:
+                live_dict[ss[x-1]] = live_var.copy()
+         live_dict[ss[len(ss)-1]] = set()
+         return live_dict
+    
+    def isMovqInstr(self, i: instr) -> bool:
+         match(i):
+              case Instr('movq', [arg1, arg2]):
+                   return True
+              case _:
+                   return False
+              
+    def isCallqInstr(self, i:instr) -> bool:
+          match(i):
+            case Callq(str, 0):
+                    return True
+            case _:
+                    return False
+               
+    def AddEdgesToRegisters(self, vars: set, graph: UndirectedAdjList) -> UndirectedAdjList:
+         regs = ["rax", "rbp", "rbx", "r12", "r13", "r14", "r15"]
+         for x in vars:
+              for r in regs:
+                   graph.add_edge(x, Reg(r))
+         return graph
+                  
+                
+    
+    def build_interference(self, mapping: dict) -> UndirectedAdjList:
+         graph = UndirectedAdjList()
+         for x in mapping.keys():
+               if self.isCallqInstr(x):
+                    graph = self.AddEdgesToRegisters(mapping[x], graph)
+               else:
+                    for y in mapping[x]:
+                         match(x):
+                            case Instr('movq', [arg1, arg2]):
+                                if y!= arg1 and y!=arg2:
+                                        graph.add_edge(y, arg2)
+                                elif y!= arg2:
+                                        graph.add_edge(y,arg2)
+                            case Instr('addq', [arg1, arg2]):
+                                if y != arg2:
+                                    graph.add_edge(y, arg2)
+                            case Instr('subq', [arg1, arg2]):
+                                if y != arg2:
+                                    graph.add_edge(y, arg2)
+                            case Instr('negq', [arg1]):
+                                if y != arg1:
+                                        graph.add_edge(y, arg1)
+         return graph
 
     def assign_homes_instrs(self, ss: List[instr],
                             home: Dict[Variable, arg]) -> List[instr]:
         res = []
-        for s in ss:
-            temp = self.assign_homes_instr(s, home)
-            res.append(temp)
+        # for s in ss:
+        #     temp = self.assign_homes_instr(s, home)
+        #     res.append(temp)
+        dict = self.uncover_live(ss)
+        print("-----uncover-live-------")
+        for i in dict.keys():
+             print(i," after varibales- ", dict[i])
+        graph = self.build_interference(dict)
+        graph.show()
         return res
+    
 
     def assign_homes(self, p: X86Program) -> X86Program:
         match p:
@@ -518,7 +671,7 @@ class Compiler:
                    else:
                         return e
                 case UnaryOp(USub(), v):
-                     pe = self.pe_neg(left,right)
+                     pe = self.pe_neg(v)
                      if type(pe) == Constant:
                             return pe
                      else:
