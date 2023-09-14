@@ -505,7 +505,7 @@ class Compiler:
         for i in dict.keys():
              print(i," after varibales- ", dict[i])
         graph = self.build_interference(dict)
-        graph.show()
+        print(graph.show())
         return res
     
 
