@@ -1,6 +1,7 @@
 import ast
 from ast import *
 from graph import UndirectedAdjList
+from priority_queue import PriorityQueue
 from utils import * 
 from x86_ast import *
 import os
@@ -10,11 +11,13 @@ from typing import List, Tuple, Set, Dict
 
 Binding = Tuple[Name, expr]
 Temporaries = List[Binding]
-
+MAX_REG = 100
 
 class Compiler:
     
     stack_space = 0
+    used_callee = []
+    callee_save = [Reg("rsp"), Reg("rbp"), Reg("rbx"), Reg("r12"), Reg("r13"), Reg("r14"), Reg("15")]
     ############################################################################
     # Remove Complex Operands
     ############################################################################
@@ -100,7 +103,7 @@ class Compiler:
         match p:
             case Module(body):
                 pe_module = self.pe_P(p)
-                print("received pe code:",pe_module.body)
+                # print("received pe code:",pe_module.body)
                 res = self.interp_stmts(pe_module.body, [])
                 return Module(res)
             case _:
@@ -305,42 +308,83 @@ class Compiler:
     # Assign Homes
     ############################################################################
 
-    def assign_homes_arg(self, a: arg, home: Dict[Variable, arg]) -> arg:
+    # def assign_homes_arg_old(self, a: arg, home: Dict[Variable, arg]) -> arg:
+    #     match a:
+    #         case Immediate(value):
+    #             return Immediate(value)
+    #         case Variable(id):
+    #             if id in home.keys():
+    #                  return home[id]   
+    #             self.stack_space = self.stack_space - 8
+    #             reg_mem = Deref("rbp",self.stack_space)
+    #             home[id] = reg_mem
+    #             return reg_mem
+    #         case Reg(id):
+    #             return Reg(id)
+    #         case _:
+    #             raise Exception('error in assign_homes_arg, unexpected ' + repr(a))       
+
+    # def assign_homes_instr_old(self, i: instr,
+    #                        home: Dict[Variable, arg]) -> instr:
+    #     match(i):
+    #         case Instr('movq', [arg1, arg2]):
+    #                 arg1_stmt = self.assign_homes_arg(arg1, home)
+    #                 arg2_stmt = self.assign_homes_arg(arg2, home)
+    #                 inst_stmt = Instr('movq', [arg1_stmt, arg2_stmt])
+    #                 return inst_stmt
+    #         case Instr('addq', [arg1, arg2]):
+    #                 arg1_stmt = self.assign_homes_arg(arg1, home)
+    #                 arg2_stmt = self.assign_homes_arg(arg2, home)
+    #                 inst_stmt = Instr('addq', [arg1_stmt, arg2_stmt])
+    #                 return inst_stmt
+    #         case Instr('subq', [arg1, arg2]):
+    #                 arg1_stmt = self.assign_homes_arg(arg1, home)
+    #                 arg2_stmt = self.assign_homes_arg(arg2, home)
+    #                 inst_stmt = Instr('movq', [arg1_stmt, arg2_stmt])
+    #                 return inst_stmt
+    #         case Instr('negq', [arg1]):
+    #                 arg1_stmt = self.assign_homes_arg(arg1, home)
+    #                 inst_stmt = Instr('negq', [arg1_stmt])
+    #                 return inst_stmt
+    #         case Callq("read_int",0):
+    #                 return i
+    #         case Callq("print_int", 0):
+    #                 return i
+    #         case _:
+    #             raise Exception('error in assign_homes_instr, unexpected ' + repr(i))
+     
+
+    def assign_homes_arg(self, a: arg, reg_var: dict) -> arg:
         match a:
             case Immediate(value):
                 return Immediate(value)
             case Variable(id):
-                if id in home.keys():
-                     return home[id]   
-                self.stack_space = self.stack_space - 8
-                reg_mem = Deref("rbp",self.stack_space)
-                home[id] = reg_mem
-                return reg_mem
+                return reg_var[a]
             case Reg(id):
                 return Reg(id)
             case _:
                 raise Exception('error in assign_homes_arg, unexpected ' + repr(a))       
 
     def assign_homes_instr(self, i: instr,
-                           home: Dict[Variable, arg]) -> instr:
+                           reg_var: dict) -> instr:
         match(i):
             case Instr('movq', [arg1, arg2]):
-                    arg1_stmt = self.assign_homes_arg(arg1, home)
-                    arg2_stmt = self.assign_homes_arg(arg2, home)
+                    arg1_stmt = self.assign_homes_arg(arg1, reg_var)
+                    arg2_stmt = self.assign_homes_arg(arg2, reg_var)
                     inst_stmt = Instr('movq', [arg1_stmt, arg2_stmt])
                     return inst_stmt
             case Instr('addq', [arg1, arg2]):
-                    arg1_stmt = self.assign_homes_arg(arg1, home)
-                    arg2_stmt = self.assign_homes_arg(arg2, home)
+                    arg1_stmt = self.assign_homes_arg(arg1, reg_var)
+                    arg2_stmt = self.assign_homes_arg(arg2, reg_var)
                     inst_stmt = Instr('addq', [arg1_stmt, arg2_stmt])
                     return inst_stmt
             case Instr('subq', [arg1, arg2]):
-                    arg1_stmt = self.assign_homes_arg(arg1, home)
-                    arg2_stmt = self.assign_homes_arg(arg2, home)
+                    arg1_stmt = self.assign_homes_arg(arg1, reg_var)
+                    arg2_stmt = self.assign_homes_arg(arg2, reg_var)
                     inst_stmt = Instr('movq', [arg1_stmt, arg2_stmt])
                     return inst_stmt
             case Instr('negq', [arg1]):
-                    arg1_stmt = self.assign_homes_arg(arg1, home)
+                    arg1_stmt = self.assign_homes_arg(arg1, reg_var)
                     inst_stmt = Instr('negq', [arg1_stmt])
                     return inst_stmt
             case Callq("read_int",0):
@@ -463,19 +507,31 @@ class Compiler:
                
     def AddEdgesToRegisters(self, vars: set, graph: UndirectedAdjList) -> UndirectedAdjList:
          regs = ["rax", "rbp", "rbx", "r12", "r13", "r14", "r15"]
+         print("Adding set-",vars, " to callee registers")
          for x in vars:
               for r in regs:
-                   graph.add_edge(x, Reg(r))
+                   if x != Reg(r):
+                    graph.add_edge(x, Reg(r))
          return graph
-                  
+    
+    def build_move_biase(self, ss: List[instr]) -> UndirectedAdjList:
+         graph = UndirectedAdjList()
+         for s in ss:
+            match(s):
+                case Instr('movq', [arg1, arg2]):
+                        if type(arg1) != Immediate and type(arg2) != Immediate:
+                            graph.add_edge(arg1, arg2)
+                case _:
+                    continue
+         return graph       
                 
     
     def build_interference(self, mapping: dict) -> UndirectedAdjList:
          graph = UndirectedAdjList()
          for x in mapping.keys():
-               if self.isCallqInstr(x):
-                    graph = self.AddEdgesToRegisters(mapping[x], graph)
-               else:
+            #    if self.isCallqInstr(x):   #Ignoring this as we don't have any callq or jumps in our logic now (Assgnt-2)
+            #         graph = self.AddEdgesToRegisters(mapping[x], graph)
+            #    else:
                     for y in mapping[x]:
                          match(x):
                             case Instr('movq', [arg1, arg2]):
@@ -493,19 +549,120 @@ class Compiler:
                                 if y != arg1:
                                         graph.add_edge(y, arg1)
          return graph
+    
+    def precolour_registers(self, graph:UndirectedAdjList, sat: dict, pq: PriorityQueue) -> dict:
+         vert = graph.vertices()
+         reg = {}
+         registers = {Reg("rax"): -1, Reg("rsp"): -2, Reg("rbp"): -3, Reg("r11"): -4, Reg("r15"): -5}
+         for v in vert:
+              if type(v) == Reg and v in registers.keys():
+                    reg[v] = registers[v]
+                    for adj in graph.adjacent(v):
+                        sat[adj].append(registers[v])
+                        if type(adj) == Reg:
+                                continue
+                        pq.increase_key(adj)
+                    if registers[v] in self.callee_save:
+                         self.used_callee.append(registers[v])  #increment the count of used callee save registers 
+                   
+         return reg, sat
+
+    def color_graph(self, graph:UndirectedAdjList, move_graph:UndirectedAdjList ) -> dict:
+         vert = graph.vertices()
+         sat = {}
+         color_v = {}
+         def compare(u,v):
+            u = u.__repr__().split("@")[0]
+            if u == "rax" or u == "rbi":
+                 u = Reg(u)
+            else:
+                 u = Variable(u)
+            v = v.__repr__().split("@")[0]
+            if v == "rax" or v == "rbi":
+                 v = Reg(v)
+            else:
+                 v = Variable(v)
+            # print("comparing the lengths of sat of u-",u," and v-",v)
+            if  len(sat[u]) == len(sat[v]):
+                 u_colours = []
+                 v_colours = []
+                 for x in move_graph.adjacent(u):
+                      if x in color_v.keys() and color_v[x] not in sat[u]:
+                           u_colours.append(color_v[x])
+                 for x in move_graph.adjacent(v):
+                      if x in color_v.keys() and color_v[x] not in sat[v]:
+                           v_colours.append(color_v[x])
+                 return len(u_colours) < len(v_colours)
+                           
+            else:
+                 return  len(sat[u]) < len(sat[v])
+         pq = PriorityQueue(compare)
+         for v in vert:
+              sat[v] = []
+         for v in vert:
+            if type(v) == Reg:
+              continue
+            pq.push(v)
+         
+         color_v, sat = self.precolour_registers(graph, sat, pq)
+         while not pq.empty():
+              v = pq.pop()
+              min_val = float("inf")
+              for x in move_graph.adjacent(v):
+                   if x in color_v.keys() and color_v[x] not in sat[v]:
+                        min_val = color_v[x] #assign a color that is available from the move instructions 
+                        break
+              if min_val == float("inf"):
+                for x in range(0,MAX_REG):
+                    if x not in sat[v]:
+                            min_val = x
+                            break
+            #   print("Minimum value gen for vertex v-",v," is:", min_val)
+              color_v[v] = min_val
+              for adj in graph.adjacent(v):
+                   sat[adj].append(min_val)
+                   pq.increase_key(adj)
+                #    print("added min_Val:",min_val," to the saturation list of edge:",adj)
+         return color_v
+    
+    def assign_registers(self, color_v:dict) -> dict:
+         registers = {0:Reg("rcx"), 1:Reg("rdx"), 2:Reg("rsi"), 3:Reg("rdi"), 4:Reg("r8"), 5:Reg("r9"),
+                      6: Reg("r10"), 7: Reg("rbx"), 8:Reg("r12"), 9:Reg("r13"), 10:Reg("r14")}
+         reg_var = {}
+         dref_counter = -8 * len(self.used_callee) # should be placed below the callee saved registers. 
+         for var in color_v.keys():
+              if color_v[var] in registers.keys():
+                reg_var[var] = registers[color_v[var]]
+                if registers[color_v[var]] in self.callee_save:
+                     self.used_callee.append(registers[color_v[var]])
+              else:
+                dref_counter = dref_counter - 8
+                reg_var[var] = Deref("rbp", dref_counter)
+                self.stack_space = self.stack_space + 1 #count of stack variables
+                
+         return reg_var
+                       
 
     def assign_homes_instrs(self, ss: List[instr],
                             home: Dict[Variable, arg]) -> List[instr]:
         res = []
-        # for s in ss:
-        #     temp = self.assign_homes_instr(s, home)
-        #     res.append(temp)
         dict = self.uncover_live(ss)
-        print("-----uncover-live-------")
-        for i in dict.keys():
-             print(i," after varibales- ", dict[i])
+        move_graph = self.build_move_biase(ss)
+        # print("-----uncover-live-------")
+        # for i in dict.keys():
+        #      print(i," after varibales- ", dict[i])
+        # print("--------------Move Grpah----------------")
+        # print(move_graph.show())
         graph = self.build_interference(dict)
-        print(graph.show())
+        # print(graph.show())
+        color = self.color_graph(graph, move_graph)
+        # print("\ncolor mapping:", color)
+        registers = self.assign_registers(color)
+        # print("\nassign registers pass o/p-", registers)
+        for s in ss:
+            temp = self.assign_homes_instr(s, registers)
+            res.append(temp)
+        # print("\nAssign Homes result:",res)
         return res
     
 
@@ -526,6 +683,8 @@ class Compiler:
         res = []
         match(i):
             case Instr('movq', [arg1, arg2]):
+                    if arg1 == arg2:
+                         return res #Ignore this instruction
                     if type(arg1) == Deref and type(arg2) == Deref:
                          arg1_stmt = Instr('movq', [arg1, Reg("rax")])
                          arg2_stmt = Instr('movq', [Reg("rax"), arg2]) 
@@ -613,19 +772,24 @@ class Compiler:
     ############################################################################
 
     def prelude_and_conclusion(self, p: X86Program) -> X86Program:
-        if self.stack_space % 16 != 0 :
-             self.stack_space = self.stack_space - 8 # forcing it to be a factor of 16
-        self.stack_space = self.stack_space * -1
+        align_count = 8 * len(self.used_callee) + 8 * self.stack_space
+        if align_count % 16 != 0 :
+             align_count = align_count + 8 # forcing it to be a factor of 16
+        final_count = align_count - (8 * len(self.used_callee))
         res = []
         # --------- PRELUDE
         res.append(Instr('pushq', [Reg("rbp")]))
         res.append(Instr("movq",[Reg("rsp"),Reg("rbp")]))
-        res.append(Instr("subq", [Immediate(self.stack_space), Reg("rsp")]))
+        for x in self.used_callee:
+             res.append(Instr('pushq', [x])) # push the callee save registers to stacks, pushq inst will automatically adjust to stack memory
+        res.append(Instr("subq", [Immediate(final_count), Reg("rsp")]))
         # --------- PROGRAM
         for y in p.body:
              res.append(y)
         # CONCLUDE
-        res.append(Instr("addq", [Immediate(self.stack_space), Reg("rsp")]))
+        res.append(Instr("addq", [Immediate(final_count), Reg("rsp")]))
+        for x in self.used_callee:
+             res.append(Instr('popq', [x])) # pop the callee save registers from memory
         res.append(Instr('popq', [Reg("rbp")]))
         res.append(Instr('retq', []))
         return  X86Program(res)   
@@ -707,4 +871,7 @@ class Compiler:
               case _:
                    raise Exception('error in  pe_P, unexpected ' + repr(p))
                    
-     
+      
+    ############################################################################
+    # Challenge - Ex-4.7 Move Biasing
+    ############################################################################
