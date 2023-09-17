@@ -532,22 +532,31 @@ class Compiler:
             #    if self.isCallqInstr(x):   #Ignoring this as we don't have any callq or jumps in our logic now (Assgnt-2)
             #         graph = self.AddEdgesToRegisters(mapping[x], graph)
             #    else:
-                    for y in mapping[x]:
+                    if len(mapping[x]) == 0:
                          match(x):
-                            case Instr('movq', [arg1, arg2]):
-                                if y!= arg1 and y!=arg2:
-                                        graph.add_edge(y, arg2)
-                                elif y!= arg2:
-                                        graph.add_edge(y,arg2)
-                            case Instr('addq', [arg1, arg2]):
-                                if y != arg2:
-                                    graph.add_edge(y, arg2)
-                            case Instr('subq', [arg1, arg2]):
-                                if y != arg2:
-                                    graph.add_edge(y, arg2)
+                            case Instr(str, [arg1, arg2]):
+                                    graph.add_vertex(arg1)
+                                    graph.add_vertex(arg2)
                             case Instr('negq', [arg1]):
-                                if y != arg1:
-                                        graph.add_edge(y, arg1)
+                                    graph.add_vertex(arg1)
+                    else:     
+                        for y in mapping[x]:
+                            print("Mapping for Instr: ",x, " for variables - ", y)
+                            match(x):
+                                case Instr('movq', [arg1, arg2]):
+                                    if y!= arg1 and y!=arg2:
+                                            graph.add_edge(y, arg2)
+                                    elif y!= arg1:
+                                            graph.add_edge(y,arg2)
+                                case Instr('addq', [arg1, arg2]):
+                                    if y != arg2:
+                                        graph.add_edge(y, arg2)
+                                case Instr('subq', [arg1, arg2]):
+                                    if y != arg2:
+                                        graph.add_edge(y, arg2)
+                                case Instr('negq', [arg1]):
+                                    if y != arg1:
+                                            graph.add_edge(y, arg1)
          return graph
     
     def precolour_registers(self, graph:UndirectedAdjList, sat: dict, pq: PriorityQueue) -> dict:
@@ -627,7 +636,7 @@ class Compiler:
     
     def assign_registers(self, color_v:dict) -> dict:
          registers = {0:Reg("rcx"), 1:Reg("rdx"), 2:Reg("rsi"), 3:Reg("rdi"), 4:Reg("r8"), 5:Reg("r9"),
-                      6: Reg("r10"), 7: Reg("rbx"), 8:Reg("r12"), 9:Reg("r13"), 10:Reg("r14")}
+                      6: Reg("r10"), 7: Reg("rbx"), 8:Reg("r12"), 9:Reg("r13"), 10:Reg("r14"), -1:Reg("rax"), -2:Reg("rsp"), -3: Reg("rbp"), -4: Reg("r11"), -5:Reg("r15")}
          reg_var = {}
          dref_counter = -8 * len(self.used_callee) # should be placed below the callee saved registers. 
          for var in color_v.keys():
@@ -648,17 +657,17 @@ class Compiler:
         res = []
         dict = self.uncover_live(ss)
         move_graph = self.build_move_biase(ss)
-        # print("-----uncover-live-------")
-        # for i in dict.keys():
-        #      print(i," after varibales- ", dict[i])
+        print("-----uncover-live-------")
+        for i in dict.keys():
+             print(i," after varibales- ", dict[i])
         # print("--------------Move Grpah----------------")
         # print(move_graph.show())
         graph = self.build_interference(dict)
-        # print(graph.show())
+        print(graph.show())
         color = self.color_graph(graph, move_graph)
-        # print("\ncolor mapping:", color)
+        print("\ncolor mapping:", color)
         registers = self.assign_registers(color)
-        # print("\nassign registers pass o/p-", registers)
+        print("\nassign registers pass o/p-", registers)
         for s in ss:
             temp = self.assign_homes_instr(s, registers)
             res.append(temp)
