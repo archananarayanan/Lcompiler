@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 from typing import Iterable
+import typing
 
 from utils import dedent, indent, indent_stmt, label_name
 
@@ -136,6 +137,7 @@ class Deref(arg):
     offset: int
 
     def __str__(self):
+        print("received Deref with args-", self.offset, self.reg)
         return str(self.offset) + '(%' + self.reg + ')'
 
 @dataclass(frozen=True)

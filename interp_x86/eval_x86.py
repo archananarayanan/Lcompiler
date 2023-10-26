@@ -377,7 +377,7 @@ class X86Emulator:
                 a1, a2 = instr.children
                 v1 = self.eval_arg(a1)
                 v2 = self.eval_arg(a2)
-
+                print("Inst-", instr,"\n")
                 if v1 == v2:
                     self.registers['EFLAGS'] = 'e'
                 elif v2 < v1:

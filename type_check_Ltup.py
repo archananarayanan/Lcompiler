@@ -26,7 +26,9 @@ class TypeCheckLtup(TypeCheckLwhile):
         self.check_type_equal(l, r, e)
         return BoolType()
       case Tuple(es, Load()):
+        print("received Tuple-", e)
         ts = [self.type_check_exp(e, env) for e in es]
+        print("processed statements types-", ts)
         e.has_type = TupleType(ts)
         return e.has_type
       case Subscript(tup, Constant(index), Load()):
