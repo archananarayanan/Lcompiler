@@ -6,10 +6,10 @@ from utils import *
 from x86_ast import *
 import os
 import copy
-from typing import Tuple as TupleType, List, Set, Dict
+from typing import Tuple as TupleTyping, List, Set, Dict
 
 
-Binding = TupleType[Name, expr]
+Binding = TupleTyping[Name, expr]
 Temporaries = List[Binding]
 MAX_REG = 100
 
@@ -18,7 +18,8 @@ class Compiler:
     stack_space = 0
     root_stack = 0
     used_callee = []
-    callee_save = [Reg("rsp"), Reg("rbp"), Reg("rbx"), Reg("r12"), Reg("r13"), Reg("r14"), Reg("15")]
+    varTypes = {}
+    callee_save = [Reg("rsp"), Reg("rbp"), Reg("rbx"), Reg("r12"), Reg("r13"), Reg("r14"), Reg("r15")]
     
 
     ############################################################################
@@ -26,7 +27,6 @@ class Compiler:
     ############################################################################
     
     def shrink_exp(self, s: expr) -> expr:
-          print("Received Shrink exp:", type(s))
           match s:
                 case IfExp(test, body, orelse):
                     res = self.shrink_exp(test)
@@ -99,7 +99,6 @@ class Compiler:
     def shrink_stmt(self, s: stmt) -> stmt:
         match s:
             case If(test, body, orelse):
-                print("Received IF Shrink stmt:", s)
                 res = self.shrink_exp(test)
                 body_exp = []
                 for b in body:
@@ -125,13 +124,12 @@ class Compiler:
                   return While(cond_shrink, stmts_shrink, [])
             case Collect(size):
                     return s
-            case Assign([Subscript(tup, index)], value):
+            case Assign([Subscript(tup, index, Store())], value):
                     tup_s = self.shrink_exp(tup)
                     index_s = self.shrink_exp(index)
                     val_s = self.shrink_exp(value)
-                    return Assign([Subscript(tup_s, index_s)], val_s)
+                    return Assign([Subscript(tup_s, index_s, Store())], val_s)
             case _:
-                print("Received Shrink stmt:", s)
                 return self.shrink_exp(s)
               
     def shrink(self, p):
@@ -193,9 +191,10 @@ class Compiler:
                     bytes_req = 8 + t_len * 8
                     begin_stms.append(If(Compare(BinOp(GlobalValue('free_ptr'),Add(),Constant(bytes_req)),[Lt()],[GlobalValue('fromspace_end')]), [], [Collect(bytes_req)]))
                     tuple = generate_name('alloc')
-                    begin_stms.append(Assign([Name(tuple)],Allocate(Constant(t_len), e.has_type)))
+                    begin_stms.append(Assign([Name(tuple)],Allocate(t_len, e.has_type)))
+                    print("Type of has Type var-", type(e.has_type))
                     for ind in range(len(temp_var)):
-                         begin_stms.append(Assign([Subscript(Name(tuple), Constant(ind), Load())], Name(temp_var[ind])))
+                         begin_stms.append(Assign([Subscript(Name(tuple), Constant(ind), Store())], Name(temp_var[ind])))
                     return Begin(begin_stms, Name(tuple))
                 case Subscript(tup, index, Load()):
                     tup_rco = self.expose_alloc_exp(tup)
@@ -205,8 +204,7 @@ class Compiler:
                     tup_rco = self.expose_alloc_exp(tup)
                     return Call(Name('len'), [tup_rco])
                 case Allocate(length, typ):
-                    len_rco = self.expose_alloc_exp(length)
-                    return Allocate(len_rco, typ)
+                    return Allocate(length, typ)
                 case GlobalValue(name):
                     return e
                 case _:
@@ -248,11 +246,11 @@ class Compiler:
                   res.append(While(test_con, exp_stmts, []))
             case Collect(size):
                   return s
-            case Assign([Subscript(tup, index)], value):
+            case Assign([Subscript(tup, index, Store())], value):
                   t_atm = self.expose_alloc_exp(tup)
                   i_atm = self.expose_alloc_exp(index)
                   val_atm = self.expose_alloc_exp(value)
-                  res.append(Assign([Subscript(t_atm, i_atm)], val_atm))
+                  res.append(Assign([Subscript(t_atm, i_atm, Store())], val_atm))
             case _:
                 raise Exception('error in expose_alloc_stmt, unexpected ' + repr(s))
         
@@ -275,7 +273,7 @@ class Compiler:
     # Remove Complex Operands
     ############################################################################
 
-    def rco_exp(self, e: expr, need_atomic: bool) -> TupleType[expr, Temporaries]:
+    def rco_exp(self, e: expr, need_atomic: bool) -> TupleTyping[expr, Temporaries]:
             print("encountering expression-", e)
             match e:
                 case BinOp(left, Add(), right):
@@ -396,11 +394,11 @@ class Compiler:
                     else:
                          return (Call(Name('len'), [tup_rco[0]]),temp)
                 case Allocate(length, typ):
-                    len_rco = self.rco_exp(length, True)
-                    temp = []
-                    for x in len_rco[1]:
-                         temp.append(x)
-                    return (Allocate(len_rco[0], typ),temp)
+                    # len_rco = self.rco_exp(length, True)
+                    # temp = []
+                    # for x in len_rco[1]:
+                    #      temp.append(x)     --- Length is just an integer
+                    return (Allocate(length, typ),[])
                 case GlobalValue(name):
                     return (e,[])
                 case _:
@@ -460,7 +458,7 @@ class Compiler:
                   res.append(While(test_b, rco_stmts, []))
             case Collect(size):
                   res.append(s)
-            case Assign([Subscript(tup, index)], value):
+            case Assign([Subscript(tup, index, Store())], value):
                   t_atm = self.rco_exp(tup, True)
                   for i in t_atm[1]:
                        res.append(i)
@@ -470,7 +468,7 @@ class Compiler:
                   val_atm = self.rco_exp(value, True)
                   for i in val_atm[1]:
                        res.append(i)
-                  res.append(Assign([Subscript(t_atm[0], i_atm[0])], val_atm[0]))
+                  res.append(Assign([Subscript(t_atm[0], i_atm[0], Store())], val_atm[0]))
             case _:
                 return self.rco_exp(s, True)
         
@@ -703,28 +701,35 @@ class Compiler:
                          cmp_stmt = Instr('cmpq', [r[0], l[0]])
                     res.append(cmp_stmt)
             case Subscript(tup, index, Load()):
-                  res.append(Instr('movq', [tup, Reg('r11')]))
+                  tup_arg = self.select_arg(tup)
+                  res.append(Instr('movq', [tup_arg, Reg('r11')]))
                   ind_loc = 8*(index+1)
                   var = Deref('r11',ind_loc)
                   return var,res
             case Call(Name('len'), [tup]):
-                   res.append(Instr('movq', [Deref(tup, 1), Reg('rax')])) # can we  hardcode rax ? 
+                   print("Callq to len method on tup-", [tup])
+                   tup_arg = self.select_arg(tup)
+                   res.append(Instr('movq', [Deref(tup_arg, 1), Reg('rax')])) # can we  hardcode rax ? 
                    res.append(Instr('andq', [Immediate(126), Reg('rax')]))
-                   res.append(Instr('sarq', [1, Reg('rax')]))
+                   res.append(Instr('sarq', [Immediate(1), Reg('rax')]))
                    var = Reg('rax')
                    return var,res
             case Allocate(length, typ):
                    tag = []
-                   if typ == TupleType:
+                   if type(typ) == Tuple:
                         for i in range(length):
-                             tag.append('1')
+                             if type(typ[i]) == Tuple:
+                                  tag.append('1')
+                             else:
+                                  tag.append(0)
+                   print("POinter locations- ", tag)
                    pointer_length = '{0:06b}'.format(length)
                    tag = ''.join(tag)+pointer_length
-                   bin_tag= bin(int(tag, 2))
-                   tag = int(bin_tag << 1)
-                   res.append(Instr('movq', ['free_ptr(\%rip)', Reg('r11')]))
-                   res.append(Instr('addq', [8*(length+1), 'free_ptr(\%rip)']))
-                   res.append(Instr('movq', [Immediate(tag), Deref(Reg('r11'), 0)]))
+                   bin_tag= int(tag, 2)
+                   tag = int((bin_tag << 1) | 1)
+                   res.append(Instr('movq', [Global('free_ptr'), Reg('r11')]))
+                   res.append(Instr('addq', [Immediate(8*(length+1)), Global('free_ptr')]))
+                   res.append(Instr('movq', [Immediate(tag), Deref('r11', 0)]))
                    var = Reg('r11')
                    return var, res
             case _:
@@ -776,10 +781,11 @@ class Compiler:
                   jmp_inst = Jump('conclusion')
                   res.append(mov_inst)
                   res.append(jmp_inst)
-            case Assign([Subscript(tup, index)], value):
-                  res.append(Instr('movq', [tup, Reg('r11')]))
-                  ind_loc = 8*(index+1)
-                  res.append(Instr('movq', [value, Deref('r11',ind_loc)]))
+            case Assign([Subscript(tup, index, Store())], value):
+                  res.append(Instr('movq', [self.select_arg(tup), Reg('r11')]))
+                  ind_loc = 8*(index.value+1)
+                  val = self.select_arg(value)
+                  res.append(Instr('movq', [val, Deref('r11',ind_loc)]))
             case Collect(size):
                   res.append(Instr('movq', [Reg('r15'), Reg('rdi')]))
                   res.append(Instr('movq', [Immediate(size), Reg('rsi')]))
@@ -883,29 +889,36 @@ class Compiler:
                     res.append(jmp_if)
                     res.append(jmp_else) 
             case Subscript(tup, index, Load()):
-                  res.append(Instr('movq', [tup, Reg('r11')]))
-                  ind_loc = 8*(index+1)
+                  tup_arg = self.select_arg(tup)
+                  res.append(Instr('movq', [tup_arg, Reg('r11')]))
+                  ind_loc = 8*(index.value+1)
                   res.append(Instr('movq', [Deref('r11',ind_loc), id]))
                   return id,res
             case Call(Name('len'), [tup]):
-                   res.append(Instr('movq', [Deref(tup, 1), Reg('rax')])) # can we  hardcode rax ? 
+                   tup_arg = self.select_arg(tup)
+                   res.append(Instr('movq', [Deref(tup_arg, 1), Reg('rax')])) # can we  hardcode rax ? 
                    res.append(Instr('andq', [Immediate(126), Reg('rax')]))
-                   res.append(Instr('sarq', [1, Reg('rax')]))
+                   res.append(Instr('sarq', [Immediate(1), Reg('rax')]))
                    res.append(Instr('movq', [Reg('rax'), id]))
                    return id,res
             case Allocate(length, typ):
                    tag = []
-                   if typ == TupleType:
+                   if type(typ) == TupleType:
+                        types = typ.types
                         for i in range(length):
-                             tag.append('1')
+                             if type(types[i]) == TupleType:
+                                  tag.append('1')
+                             else:
+                                  tag.append('0')
                    pointer_length = '{0:06b}'.format(length)
                    tag = ''.join(tag)+pointer_length
-                   bin_tag= bin(int(tag, 2))
+                   print("Generated TAG-", tag)
+                   bin_tag= int(tag, 2)
                    tag = int((bin_tag << 1) | 1)
                    print(" obtained Tag for inst-",s," is-",tag)
-                   res.append(Instr('movq', ['free_ptr(\%rip)', Reg('r11')]))
-                   res.append(Instr('addq', [8*(length+1), 'free_ptr(\%rip']))
-                   res.append(Instr('movq', [Immediate(tag), Deref(Reg('r11'), 0)]))
+                   res.append(Instr('movq', [Global('free_ptr'), Reg('r11')]))
+                   res.append(Instr('addq', [Immediate(8*(length+1)), Global('free_ptr')]))
+                   res.append(Instr('movq', [Immediate(tag), Deref('r11', 0)]))
                    res.append(Instr('movq', [Reg('r11'), id]))
                    return id, res
             case _:
@@ -987,26 +1000,33 @@ class Compiler:
                     res.append(jmp_if)
                     res.append(jmp_else) 
             case Subscript(tup, index, Load()):
-                  res.append(Instr('movq', [tup, Reg('r11')]))
-                  ind_loc = 8*(index+1)
+                  tup_arg = self.select_arg(tup)
+                  res.append(Instr('movq', [tup_arg, Reg('r11')]))
+                  ind_loc = 8*(index.value+1)
                   return res, Deref('r11',ind_loc)
             case Call(Name('len'), [tup]):
-                   res.append(Instr('movq', [Deref(tup, 1), Reg('rax')])) # can we  hardcode rax ? 
+                   tup_arg = self.select_arg(tup)
+                   res.append(Instr('movq', [Deref(tup_arg, 1), Reg('rax')])) # can we  hardcode rax ? 
                    res.append(Instr('andq', [Immediate(126), Reg('rax')]))
-                   res.append(Instr('sarq', [1, Reg('rax')]))
+                   res.append(Instr('sarq', [Immediate(1), Reg('rax')]))
                    return res,Reg('rax')
             case Allocate(length, typ):
                    tag = []
-                   if typ == TupleType:
+                   print("on allocate stmt with type-", type(typ))
+                   if type(typ) == Tuple:
                         for i in range(length):
-                             tag.append('1')
+                             if type(typ[i]) == Tuple:
+                                  tag.append('1')
+                             else:
+                                  tag.append(0)
+                   print("POinter locations- ", tag)
                    pointer_length = '{0:06b}'.format(length)
                    tag = ''.join(tag)+pointer_length
-                   bin_tag= bin(int(tag, 2))
-                   tag = int(bin_tag << 1)
-                   res.append(Instr('movq', ['free_ptr(\%rip)', Reg('r11')]))
-                   res.append(Instr('addq', [8*(length+1), 'free_ptr(\%rip)']))
-                   res.append(Instr('movq', [Immediate(tag), Deref(Reg('r11'), 0)]))
+                   bin_tag= int(tag, 2)
+                   tag = int((bin_tag << 1) | 1)
+                   res.append(Instr('movq', [Global('free_ptr'), Reg('r11')]))
+                   res.append(Instr('addq', [Immediate(8*(length+1)), Global('free_ptr')]))
+                   res.append(Instr('movq', [Immediate(tag), Deref('r11', 0)]))
                    return res, Reg('r11')
             case _:
                 return res,self.select_arg(s) 
@@ -1030,6 +1050,8 @@ class Compiler:
     def select_instructions(self, p: Module) -> X86Program:
          match p:
             case CProgram(body):
+                self.varTypes = p.var_types
+                print("received var-types:", self.varTypes)
                 blocks = {}
                 for (l, ss) in body.items():
                     l_stmt = []
@@ -1096,6 +1118,10 @@ class Compiler:
                 return reg_var[a]
             case Reg(id):
                 return Reg(id)
+            case Global(value):
+                  return Global(value)
+            case Deref(reg, off):
+                  return a
             case _:
                 raise Exception('error in assign_homes_arg, unexpected ' + repr(a))       
 
@@ -1129,6 +1155,8 @@ class Compiler:
             case Callq("read_int",0):
                     return i
             case Callq("print_int", 0):
+                    return i
+            case Callq("collect", 0):
                     return i
             case Instr('cmpq', [arg1, arg2]):
                    arg1_stmt = self.assign_homes_arg(arg1, reg_var)
@@ -1179,6 +1207,10 @@ class Compiler:
                 return Variable(id)
             case Reg(id):
                 return Reg(id)
+            case Global(name):
+                return Global(name)
+            case Deref(reg, off):
+                return a
             case _:
                 raise Exception('error in assign_homes_arg, unexpected ' + repr(a))       
          
@@ -1212,6 +1244,8 @@ class Compiler:
                         res.add(w_var)
             case Callq("print_int", 0):
                    return None
+            case Callq("collect",0):
+                   pass
             case Instr('cmpq', [arg1, arg2]):
                    pass
             case Instr('sete',[arg1]):
@@ -1281,6 +1315,8 @@ class Compiler:
                         res.add(w_var)
             case Callq("read_int",0):
                    return None
+            case Callq("collect",0):
+                   pass
             case Callq("print_int", 0):
                    w_var = self.live_arg(Reg("rdi"))
                    if w_var != None:
@@ -1423,6 +1459,12 @@ class Compiler:
                     return True
             case _:
                     return False
+    def isCollectCall(self, i: instr) -> bool:
+         match(i):
+              case Callq("collect", 0):
+                  return True
+              case _:
+                  return False
                
     def AddEdgesToRegisters(self, vars: set, graph: UndirectedAdjList) -> UndirectedAdjList:
          regs = ["rax", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11"]
@@ -1434,9 +1476,9 @@ class Compiler:
          return graph
     
     def AddEdgesToCalleeRegisters(self, vars: Variable, graph: UndirectedAdjList) -> UndirectedAdjList:
-         for x in vars:
-              for r in self.callee_save:
-                    graph.add_edge(x, Reg(r))
+         print("Adding edges to callee registers for tuple-", vars)
+         for r in self.callee_save:
+               graph.add_edge(vars, r)
          return graph
     
     def build_move_biase(self, graph, ss: List[instr]) -> UndirectedAdjList:
@@ -1456,10 +1498,9 @@ class Compiler:
     
     def build_interference(self, block_inst) -> UndirectedAdjList:
          graph = UndirectedAdjList()
-     #     print("BUILD INTERFERENCE -------------------------------------\n")
-        #  print("Block_inst keys:", block_inst.keys())
+         print("BUILD INTERFERENCE -------------------------------------\n")
          for b in block_inst.keys():
-          #   print("Block insts for block-",b," are-", block_inst[b],"\n")
+            print("Block insts for block-",b," are-", block_inst[b],"\n")
             mapping = block_inst[b][1] # due to result from liveness analysis
             for x in mapping.keys():
                 match(x):
@@ -1473,12 +1514,20 @@ class Compiler:
                                 if type(arg1) != Immediate:
                                     graph.add_vertex(arg1)
                         
-                if self.isCallqInstr(x):   #Ignoring this as we don't have any callq or jumps in our logic now (Assgnt-2)
+                if self.isCallqInstr(x) and self.isCollectCall(x):   #Ignoring this as we don't have any callq or jumps in our logic now (Assgnt-2)
                         # print("Assigninh caller save registers to variables - ", mapping[x])
-                        graph = self.AddEdgesToRegisters(mapping[x], graph)
+                         for y in mapping[x]:
+                              print("live vars on collect-", [y])   #all the call-live variables should have edge to callee-save registers
+                              if type(y) == Variable and type(self.varTypes[y.id]) == TupleType:
+                                   graph = self.AddEdgesToCalleeRegisters(y, graph)
+                                   graph = self.AddEdgesToRegisters(set([y]), graph)
+                              else:
+                                   graph = self.AddEdgesToRegisters(set([y]), graph)
+                elif self.isCallqInstr(x):
+                     graph = self.AddEdgesToRegisters(mapping[x], graph)
                 else: 
                         for y in mapping[x]:
-                         #    print("Mapping for Instr: ",x, " for variables - ", y,  "\n")
+                            print("Mapping for Instr: ",x, " for variables - ", y,  "\n")
                             match(x):
                                 case Instr('movq', [arg1, arg2]):
                                     if y!= arg1 and y!=arg2 and type(arg2) != Immediate:
@@ -1503,11 +1552,8 @@ class Compiler:
                                     if y!=arg2 and type(arg2) != Immediate:
                                         #     print("Adding edge for -", y, " and ", arg2)
                                             graph.add_edge(y, arg2)
-                                case Callq("collect", 0):   #all the call-live variables should have edge to callee-save registers
-                                      if type(y) == Variable and y.var_types == TupleType:
-                                           graph = self.AddEdgesToCalleeRegisters(y, graph)
                                            
-     #     print("-------------END INTERFERENCE--------------------------------------------")
+         print("-------------END INTERFERENCE--------------------------------------------")
          return graph
     
     def precolour_registers(self, graph:UndirectedAdjList, sat: dict, pq: PriorityQueue) -> dict:
@@ -1530,19 +1576,33 @@ class Compiler:
 
     def color_graph(self, graph:UndirectedAdjList, move_graph:UndirectedAdjList ) -> dict:
          vert = graph.vertices()
-     #     print("Graph Vertices:", vert)
+         print("Graph Vertices:", vert)
          sat = {}
          color_v = {}
          precoloured_registers = {Reg("rax"): -1, Reg("rsp"): -2, Reg("rbp"): -3, Reg("r11"): -4, Reg("r15"): -5, Reg("al"): -1, Reg("ah"): -1}
          registers_list = ["rsp", "rbp", "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "al", "ah"]
          def compare(u,v):
             u = u.__repr__().split("@")[0]
-            if u[1:] in registers_list:
+            if 'free_ptr' in u:
+                 u = Global('free_ptr')
+            elif 'fromspace_end' in u:
+                 u = Global('fromspace_end')
+            elif u[0].isdigit():
+                 ind = u.index("("); off = u[:ind]; reg= u[ind+2:len(u)-1]
+                 u = Deref(reg, int(off))
+            elif u[1:] in registers_list:
                  u = Reg(u[1:])
             else:
                  u = Variable(u)
             v = v.__repr__().split("@")[0]
-            if v[1:] in registers_list:
+            if 'free_ptr' in v:
+                 v = Global('free_ptr')
+            elif 'fromspace_end' in v:
+                 v = Global('fromspace_end')
+            elif v[0].isdigit():
+                 ind = v.index("("); off = v[:ind]; reg= v[ind+2:len(v)-1]
+                 v = Deref(reg, int(off))
+            elif v[1:] in registers_list:
                  v = Reg(v[1:])
             else:
                  v = Variable(v)
@@ -1607,7 +1667,7 @@ class Compiler:
                      dref_counter = dref_counter - 8
                      reg_var[var] = Deref("rbp", dref_counter)
                      colors_mem[color_v[var]] = Deref("rbp", dref_counter)
-                     if type(var) == Variable and var.var_types == TupleType:
+                     if type(var) == Variable and type(self.varTypes[var.id]) == TupleType:
                           self.root_stack = self.root_stack + 1 # count of spilled tuples
                      else:
                           self.stack_space = self.stack_space + 1 #count of stack variables
@@ -1796,12 +1856,14 @@ class Compiler:
         main_inst.append(Instr('pushq', [Reg("rbp")]))
         main_inst.append(Instr("movq",[Reg("rsp"),Reg("rbp")]))
         for x in self.used_callee:
+             if x == Reg('rbp') or x == Reg('rsp'):
+                  continue
              main_inst.append(Instr('pushq', [x])) # push the callee save registers to stacks, pushq inst will automatically adjust to stack memory
         main_inst.append(Instr("subq", [Immediate(final_count), Reg("rsp")]))
         main_inst.append(Instr("movq", [Immediate(65536), Reg("rdi")]))
         main_inst.append(Instr("movq", [Immediate(16), Reg("rsi")]))
         main_inst.append(Callq('initialize',0))
-        main_inst.append(Instr("movq", ["rootstack_begin(\%rip)", Reg("r15")]))
+        main_inst.append(Instr("movq", [Global("rootstack_begin"), Reg("r15")]))
         main_inst.append(Instr("movq", [Immediate(0), Deref('r15',0)]))
         main_inst.append(Instr("addq", [Immediate(8*self.root_stack), Reg('r15')]))
         main_inst.append(Jump("start"))
@@ -1843,8 +1905,7 @@ class Compiler:
               case (Constant(r1), Constant(r2)):
                    return Constant(sub64(r1,r2))
               case _:
-                   return BinOp(r1, Sub(), r2)
-              
+                   return BinOp(r1, Sub(), r2)       
 
     def pe_exp(self, e: expr) -> expr:
             match e:
@@ -1947,11 +2008,11 @@ class Compiler:
                   return While(test_exp, body_exp, [])
             case Collect(size):
                   return s
-            case Assign([Subscript(tup, index)], value):
+            case Assign([Subscript(tup, index, Store())], value):
                   tup_exp = self.pe_exp(tup)
                   ind_exp = self.pe_exp(index)
                   val = self.pe_exp(value)
-                  return Assign([Subscript(tup_exp, ind_exp)], val)
+                  return Assign([Subscript(tup_exp, ind_exp, Store())], val)
             case _:
                 raise Exception('error in pe_stmt, unexpected ' + repr(s))
              

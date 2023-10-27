@@ -9,6 +9,8 @@ import interp_Lvar
 import type_check_Lvar
 import interp_Ltup
 import type_check_Ltup
+import type_check_Ctup
+import type_check_Larray
 from utils import run_tests, run_one_test, enable_tracing
 from interp_x86.eval_x86 import interp_x86
 
@@ -18,17 +20,20 @@ compiler = compiler.Compiler()
 
 typecheck = type_check_Ltup.TypeCheckLtup().type_check
 
+typecheck_cTup = type_check_Ctup.TypeCheckCtup().type_check
+
 typecheck_dict = {
     'source': typecheck,
     'shrink': typecheck,
+    'expose_allocation': typecheck,
     'remove_complex_operands': typecheck,
+    'explicate_control': typecheck_cTup,
+    'select_instructions': typecheck_cTup,
+    'assign_homes': typecheck_cTup
 }
 interp = interp_Ltup.InterpLtup().interp
 interp_dict = {
-    'remove_complex_operands': interp,
-    'select_instructions': interp_x86,
-    'assign_homes': interp_x86,
-    'patch_instructions': interp_x86,
+    'remove_complex_operands': interp
 }
 
 if False:
