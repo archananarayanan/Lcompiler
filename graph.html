@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    
+</head>
+<body>
+    <svg id="graph"></svg>
+    <script>
+
+        const nodes = [
+        { id: 'node1', name: 'Node 1' },
+    { id: 'node2', name: 'Node 2' },
+            // Add more nodes
+        ];
+        
+        const edges = [
+            { source: 'node1', target: 'node2' },
+           
+        ];
+        
+        const width = 800;
+        const height = 600;
+        
+        const svg = d3.select("#graph")
+            .attr("width", width)
+            .attr("height", height);
+        
+        // Create a simulation for the force-directed layout
+        const simulation = d3.forceSimulation()
+            .force("link", d3.forceLink().id(d => d.id).links(edges))
+            .force("charge", d3.forceManyBody())
+            .force("center", d3.forceCenter(width / 2, height / 2));
+        
+        
+            // Create links
+        
+        // Create nodes
+        const node = svg.selectAll(".node")
+            .data(nodes)
+            .enter()
+            .append("g")
+            .attr("class", "node")
+            .call(d3.drag()
+                .on("start", dragstarted)
+                .on("drag", dragged)
+                .on("end", dragended));
+        
+
+            </script>
+</body>
+</html>

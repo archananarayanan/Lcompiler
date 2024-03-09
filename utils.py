@@ -371,9 +371,6 @@ While.__repr__ = repr_While
 
 
 def str_Compare(self):
-    print("received compare args:", " left-", self.left)
-    print("right-", self.comparators)
-    print("OP-", self.ops)
     return str(self.left) + ' ' + str(self.ops[0]) + ' ' + str(self.comparators[0])
 
 

@@ -1,7 +1,3 @@
-# python-student-support-code
-
-Support code for students (Python version).
-
 The `runtime.c` file needs to be compiled by doing the following
 ```
    gcc -c -g -std=c99 runtime.c

@@ -90,6 +90,7 @@ class TypeCheckLlambda(TypeCheckLfun):
           case _:
             raise Exception('lambda does not have type ' + str(ty))
       case _:
+        # print("received exp on tye check - ", e, " matching ty-", ty)
         t = self.type_check_exp(e, env)
         self.check_type_equal(t, ty, e)
 
